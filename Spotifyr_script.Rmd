@@ -15,7 +15,12 @@ pacman::p_load(dplyr,
                glue,
                fansi,
                plotly,
-               knitr #package from Spotifyr tutorial)
+               knitr, #package from Spotifyr tutorial
+               lubridate, #package from Spotifyr tutorial
+               googledrive, #from Jacob's script
+               tibble, #from Jacob's script
+               wordcloud
+               )
 
 install_github('charlie86/spotifyr', force = T)
 library(spotifyr)
@@ -35,30 +40,130 @@ access_token <- get_spotify_access_token()
 
 ```
 
-## What was The Beatles’ favorite key?
+## Spotifyr READ.ME pratice
 
 I will try to make my first usage of Spotifyr as described by https://github.com/charlie86/spotifyr 
 
 
 ```{r }
-library(spotifyr)
+#What was The Beatles’ favorite key?
 beatles <- get_artist_audio_features('the beatles')
 
 beatles %>% 
     count(key_mode, sort = TRUE) %>% 
     head(5) %>% 
     kable()
+#Get your most recently played tracks
+get_my_recently_played(limit = 5) %>% 
+    mutate(artist.name = map_chr(track.artists, function(x) x$name[1]),
+           played_at = as_datetime(played_at)) %>% 
+    select(track.name, artist.name, track.album.name, played_at) %>% 
+    kable()
+
+#Find your all time favorite artists
+get_my_top_artists_or_tracks(type = 'artists', time_range = 'long_term', limit = 5) %>% 
+    select(name, genres) %>% 
+    rowwise %>% 
+    mutate(genres = paste(genres, collapse = ', ')) %>% 
+    ungroup %>% 
+    kable()
+
+
+#Find your favorite tracks at the moment
+get_my_top_artists_or_tracks(type = 'tracks', time_range = 'short_term', limit = 5) %>% 
+    mutate(artist.name = map_chr(artists, function(x) x$name[1])) %>% 
+    select(name, artist.name, album.name) %>% 
+    kable()
+
+#Find your all time favorite tracks
+my_fav_tracks_20 <- tibble(get_my_top_artists_or_tracks(type = 'tracks', time_range = 'long_term', limit = 20) %>% 
+    mutate(artist.name = map_chr(artists, function(x) x$name[1]))) 
+    #select(name, artist.name, album.name))
 
 ```
 
 ## Exploring the Spotify API with R tutorial
+
 I followed this beginners guide to make some initial plots https://msmith7161.github.io/what-is-speechiness/
 
 ```{r}
+#Type in the ID that you want to explore
+my_id <- 'charlotte.jacobsen'
 
-my_plists <- get_user_playlists(id)
+#Get playlists from the account charotte.jacobsen
+my_plists <- get_user_playlists(my_id)
 
+#Filter playlists where owner is charlotte.jacobsen
+my_plists2 <- my_plists %>%
+  subset(owner.display_name == 'charlotte.jacobsen')
+
+#Get most 
+Husk <- my_plists2$name == 'Husk'
+tracks <- get_playlist_tracks(my_plists2$name == 'Husk')
+features <- get_track_audio_features(tracks)
 ```
 
+## Following Jacob's scrips
+
+I adopted the scripts from Jacob Damsgaard https://github.com/jacdals97/spotifyr_scripts/blob/main/my_favourites.R to get a csv file of favorite tracks
+```{r}
+name <- "Matilde"
+#Placeholder for the file to be written
+file_name <- paste0("mft_", name, ".csv")
+
+#Getting the top played tracks for three time periods
+#long term
+my_favorite_tracks <- tibble(get_my_top_artists_or_tracks(type = "tracks", limit = 50, time_range = "long_term",
+                                                   authorization = get_spotify_authorization_code(scope = "user-top-read"))[,7:10],
+                             #%>% mutate(artist.name = map_chr(artists, function(x) x$name[1])),
+                             period = "all_time") %>% 
+  bind_cols(get_track_audio_features(.$id)) 
+#middle term
+my_favorite_tracks <- bind_rows(my_favorite_tracks,
+                                tibble(get_my_top_artists_or_tracks(type = "tracks", limit = 50, time_range = "medium_term",
+                                                authorization = get_spotify_authorization_code(scope = "user-top-read"))[,7:10],
+                   period = "medium_term") %>% 
+  bind_cols(get_track_audio_features(.$id)))
+#short term
+my_favorite_tracks <- bind_rows(my_favorite_tracks,
+  tibble(get_my_top_artists_or_tracks(type = "tracks", limit = 50,  time_range = "short_term",
+                                                authorization = get_spotify_authorization_code(scope = "user-top-read"))[,7:10],
+                   period = "short_term") %>%
+    bind_cols(get_track_audio_features(.$id)))
+  
+#Creating a .csv file of favorite tracks
+write.csv(my_favorite_tracks, file_name)
+
+#Reading the same file
+my_favorite_tracks <- read.csv("mft_Matilde.csv")
+
+#Creating a normalize function
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+#Normalizing loudness and tempo
+my_favorite_tracks$loudness_norm <- normalize(my_favorite_tracks$loudness)
+my_favorite_tracks$tempo_norm <- normalize(my_favorite_tracks$tempo)
+
+#Renaming certain columns
+my_favorite_tracks <- tibble(get_my_top_artists_or_tracks(type = 'tracks', time_range = 'long_term') %>% 
+    mutate(artist.name = map_chr(artists, function(x) x$name[1]))) %>% 
+    select(name, artist.name, album.name)
+
+#Creating an object of top songs
+top_songs <- my_favorite_tracks %>% group_by(name) %>% summarise(freq = n())
+topsongs_all <- my_favorite_tracks %>% group_by(name) %>% summarise(freq = n())
+
+wordcloud::wordcloud(top_songs$name, top_songs$freq, scale=c(1.5,0.2), min.freq = 2, max.words = 50, 
+                     random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+
+top_artists <- my_favorite_tracks %>% group_by(artist.name) %>% summarise(freq = n())
+topartists_all <- my_favorite_tracks %>% group_by(artist.name) %>% summarise(freq = n())
+
+wordcloud::wordcloud(top_artists$artist.name, top_artists$freq, scale=c(1.5,0.2), min.freq = 0, max.words = 50, 
+                     random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+
+```
 
 
