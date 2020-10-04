@@ -1,0 +1,64 @@
+---
+title: "Final Project"
+author: "Matilde Jacobsen"
+date: "10/4/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Install packages
+
+```{r setup, include=FALSE}
+pacman::p_load(dplyr,
+               tidyverse,
+               devtools,
+               glue,
+               fansi,
+               plotly,
+               knitr #package from Spotifyr tutorial)
+
+install_github('charlie86/spotifyr', force = T)
+library(spotifyr)
+
+```
+
+## Authentication
+
+First, set up a Developer account with Spotify to access their Web API here and CREATE AN APP from the Dashboard site. This will give you your Client ID and Client Secret. Once you have those, you can pull your access token into R with get_spotify_access_token().
+```{r cars}
+id <- '135dfc17ee1c4faea6c0f8ccda27734f'
+secret <- '596b88ec42444418a592fc3fcb539e89'
+Sys.setenv(SPOTIFY_CLIENT_ID = id)
+Sys.setenv(SPOTIFY_CLIENT_SECRET = secret)
+
+access_token <- get_spotify_access_token()
+
+```
+
+## What was The Beatles’ favorite key?
+
+I will try to make my first usage of Spotifyr as described by https://github.com/charlie86/spotifyr 
+
+
+```{r }
+library(spotifyr)
+beatles <- get_artist_audio_features('the beatles')
+
+beatles %>% 
+    count(key_mode, sort = TRUE) %>% 
+    head(5) %>% 
+    kable()
+
+```
+
+## Exploring the Spotify API with R tutorial
+I followed this beginners guide to make some initial plots https://msmith7161.github.io/what-is-speechiness/
+
+```{r}
+
+my_plists <- get_user_playlists(id)
+
+```
+
+
+
