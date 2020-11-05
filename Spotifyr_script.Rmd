@@ -1,5 +1,5 @@
 ---
-title: "Final Project"
+title: "Practice for Final Project"
 author: "Matilde Jacobsen"
 date: "10/4/2020"
 output: html_document
@@ -9,6 +9,9 @@ editor_options:
 ## Install packages
 
 ```{r setup, include=FALSE}
+#Clean environment
+rm(list = ls())
+
 pacman::p_load(dplyr,
                tidyverse,
                devtools,
@@ -31,14 +34,14 @@ library(spotifyr)
 ## Authentication
 
 First, set up a Developer account with Spotify to access their Web API here and CREATE AN APP from the Dashboard site. This will give you your Client ID and Client Secret. Once you have those, you can pull your access token into R with get_spotify_access_token().
-```{r cars}
+```{r cars, include=FALSE}
 id <- '135dfc17ee1c4faea6c0f8ccda27734f'
 secret <- '596b88ec42444418a592fc3fcb539e89'
 Sys.setenv(SPOTIFY_CLIENT_ID = id)
 Sys.setenv(SPOTIFY_CLIENT_SECRET = secret)
 
-access_token <- get_spotify_access_token()
-
+access_token <- spotifyr::get_spotify_access_token()
+#authorization_code <- get_spotify_authorization_code((scope = "user-top-read"))
 ```
 
 ## Spotifyr pratice
@@ -95,6 +98,53 @@ new_releases_br <- tibble(get_new_releases(country = 'BR') %>%
 
 ```
 
+
+## Exploring the Spotify API with R tutorial
+
+I followed this beginners guide to make some initial plots https://msmith7161.github.io/what-is-speechiness/
+
+```{r}
+#Type in the ID that you want to explore
+my_id <- 'charlotte.jacobsen'
+e_id <- '1111913951'
+#Get playlists from the account charotte.jacobsen
+my_plists <- get_user_playlists(my_id)
+my_plists <- get_user_playlists(e_id)
+#Filter playlists where owner is charlotte.jacobsen
+my_plists2 <- my_plists %>%
+  subset(owner.display_name == 'charlotte.jacobsen')
+
+
+#Get most 
+sahara <- my_plists %>% filter(name %in% c('Sahara',"Sahara music"))
+tracks <- get_playlist_tracks(sahara$id[1])
+tracks <- tracks %>% rename(uri = track.uri)
+features <- get_track_audio_features(tracks$track.id)
+
+sahara_merged <- merge(tracks, features, by = "uri")
+sahara_merged <- sahara_merged %>% select(c("track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+cols <- colnames(sahara_merged)
+allData <- data.frame(matrix(ncol = length(cols), nrow = 0))
+colnames(allData) <- cols
+
+for (i in 1:length(sahara$id)){
+  tracks <- get_playlist_tracks(sahara$id[i])
+  tracks <- tracks %>% rename(uri = track.uri)
+  features <- get_track_audio_features(tracks$track.id)
+  merged <- merge(tracks, features, by = 'uri')
+  merged <- merged %>% select(c("track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+  if (nrow(allData) == 0){
+    allData <- merged
+  } else{
+    allData <- rbind(allData, merged)
+  }
+}
+
+
+
+```
+
+
 ##Sentify
 
 I will try to create a plot of the sentiment based on the Sentify plotmaker: http://www.rcharlie.net/sentify/
@@ -119,25 +169,9 @@ classify_track_sentiment <- function(valence, energy) {
     }
 }
 
-#I will try to apply it to my playlist data
-my_id <- 'charlotte.jacobsen'
-my_plist <- get_user_playlists(my_id)
-husk <- my_plist %>%
-  filter(name %in% 'Husk')
-#extracting tracks data from playlist
-tracks_on_husk <- get_playlist_tracks(husk$id) %>% 
-  mutate(artist.name = map_chr(track.artists, function(x) x$name[1])) %>% 
-  select(track.name, track.popularity, artist.name, track.album.name, track.id, track.uri) %>% 
-  rename(uri = track.uri)
-#extract features
-features_on_husk <- get_track_audio_features(tracks_on_husk$track.id)
-
-#merge the two columns
-husk_merged <- merge(tracks_on_husk, features_on_husk, by = 'uri')
-
 #apply function
-sentiment_profiles <- husk_merged %>% 
-        rowwise %>% 
+allData <- allData %>% 
+        rowwise() %>% 
         mutate(sentiment = classify_track_sentiment(valence, energy)) %>% 
         ungroup
 
@@ -176,31 +210,9 @@ sentiment_profiles %>% ggplot(aes(x = 'valence', y = 'energy', group = 'track.na
                                                      color =  '#fff',
                                                      textOutline = '0px')))
 
-?ggplot2
+
 ```
 
-
-## Exploring the Spotify API with R tutorial
-
-I followed this beginners guide to make some initial plots https://msmith7161.github.io/what-is-speechiness/
-
-```{r}
-#Type in the ID that you want to explore
-my_id <- 'charlotte.jacobsen'
-
-#Get playlists from the account charotte.jacobsen
-my_plists <- get_user_playlists(my_id)
-
-#Filter playlists where owner is charlotte.jacobsen
-my_plists2 <- my_plists %>%
-  subset(owner.display_name == 'charlotte.jacobsen')
-
-
-#Get most 
-sahara <- my_plists %>% filter(name %in% c('Sahara', 'Sahara music'))
-tracks <- get_playlist_tracks(sahara$id)
-features <- get_track_audio_features(tracks$track.id)
-```
 
 ## Following Jacob's scrips
 
@@ -265,4 +277,13 @@ wordcloud::wordcloud(top_artists$artist.name, top_artists$freq, scale=c(1.5,0.2)
 
 ```
 
+##Practicing High Charter package
+
+```{r}
+remotes::install_github("allisonhorst/palmerpenguins")
+library(highcharter)
+data(penguins, package = "palmerpenguins")
+hchart(penguins, "scatter", hcaes(x = flipper_length_mm, y = bill_length_mm, group = species))
+
+```
 
