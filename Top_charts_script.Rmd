@@ -1,0 +1,188 @@
+---
+title: "Script used for final project"
+author: "Matilde Jacobsen"
+date: "11/5/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Install packages
+
+```{r setup, include=FALSE}
+#Clean environment
+rm(list = ls())
+
+pacman::p_load(dplyr,
+               tidyverse,
+               devtools,
+               knitr, #package from Spotifyr tutorial
+               highcharter, #interactive plot
+               scales, #scaling variables
+               viridis #color palettes
+               )
+
+install_github('charlie86/spotifyr', force = T)
+library(spotifyr)
+
+```
+
+## Authentication
+
+First, set up a Developer account with Spotify to access their Web API here and CREATE AN APP from the Dashboard site. This will give you your Client ID and Client Secret. Once you have those, you can pull your access token into R with get_spotify_access_token().
+```{r cars, include=FALSE}
+id <- '135dfc17ee1c4faea6c0f8ccda27734f'
+secret <- '596b88ec42444418a592fc3fcb539e89'
+Sys.setenv(SPOTIFY_CLIENT_ID = id)
+Sys.setenv(SPOTIFY_CLIENT_SECRET = secret)
+
+access_token <- spotifyr::get_spotify_access_token()
+#authorization_code <- get_spotify_authorization_code((scope = "user-top-read"))
+```
+
+## Top charts Europe
+```{r}
+#I will try to apply it to my playlist data
+
+my_id <- 'charlotte.jacobsen'
+my_plists <- get_user_playlists(my_id, limit = 38)
+
+top_50 <- my_plists$name
+#Selecting playlists for top chart data
+top_charts <- my_plists %>%
+  filter(name %in% top_50)
+
+#Testing elements of the loop
+tracks1 <- get_playlist_tracks(top_charts$id[1])
+tracks1$country <- word(top_charts$name[1], 1)
+tracks1 <- tracks1 %>% rename(uri = track.uri)
+features1 <- get_track_audio_features(tracks1$track.id)
+merged1 <- merge(tracks1, features1, by = 'uri')
+merged1 <- merged1 %>% select(c("country","track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+
+#Defining empty data frame
+cols <- colnames(merged1)
+allData <- data.frame(matrix(ncol = length(cols), nrow = 0))
+colnames(allData) <- cols
+
+#Loop
+for (i in 1:length(top_charts$id)){
+  #extracting tracks data from playlist
+  tracks <- get_playlist_tracks(top_charts$id[i])
+  #add country column
+  tracks$country <- word(top_charts$name[i], 1)
+  #rename uri for merge
+  tracks <- tracks %>% rename(uri = track.uri)
+  #extract features
+  features <- get_track_audio_features(tracks$track.id)
+  #merge tracks and features by uri
+  merged <- merge(tracks, features, by = 'uri')
+  #select relevant columns
+  merged <- merged %>% select(c("country","track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+  if (nrow(allData) == 0){
+    allData <- merged
+  } else{
+    allData <- rbind(allData, merged)
+  }
+}
+
+##Checking for things to clean##
+#names of countries
+unique(allData$country)
+
+allData$country[159:208] <- "Bosnia & Herzegovina"
+allData$country[309:358] <- "Croatia"
+allData$country[409:458] <- "Czech Republic"
+allData$country[1109:1158] <- "Macedonia"
+allData$country[1905:1954] <- "United Kingdom"
+
+```
+
+##Practicing High Charter package
+Scatter plots
+```{r}
+remotes::install_github("allisonhorst/palmerpenguins")
+library(highcharter)
+data(penguins, package = "palmerpenguins")
+hchart(penguins, "scatter", hcaes(x = flipper_length_mm, y = bill_length_mm, group = species))
+
+hchart(allData, "scatter", hcaes(x = energy, y = danceability, group = country))
+
+
+```
+Maps
+```{r}
+pacman::p_load(treemap, scales, viridisLite, viridis, pals)
+
+
+#making a dataframe countrywise
+
+countries <- merge(allData, GNI2014, by = "country")
+
+allData$country <- as.factor(allData$country)
+map_stats_dance <- allData %>% 
+  group_by(country) %>% 
+  summarise(mean_danceability = mean(danceability)) 
+
+
+map_stats_energy <- allData %>% 
+  group_by(country) %>% 
+  summarise(mean_energy = mean(energy)) 
+
+map_stats_passionate <- allData %>%
+  rowwise() %>% 
+  mutate(passion = sum(danceability, energy)) %>% 
+  group_by(country) %>% 
+  summarise(mean_passion = mean(passion))
+
+eu_map <- get_data_from_map(download_map_data("custom/europe"))
+# mergin plotdata
+eu_plot_dance <- left_join(map_stats_dance, eu_map[,5:7], by = c("country" = "name"))
+eu_plot_energy <- left_join(map_stats_energy, eu_map[,5:7], by = c("country" = "name"))
+eu_plot_passion <- left_join(map_stats_passionate, eu_map[,5:7], by = c("country" = "name"))
+#rescaling the danceability scores
+eu_plot_dance$mean_danceability <- rescale(eu_plot_dance$mean_danceability, to = c(-10, 10))
+eu_plot_energy$mean_energy <- rescale(eu_plot_energy$mean_energy, to = c(-10, 10))
+eu_plot_passion$mean_passion <- rescale(eu_plot_passion$mean_passion, to = c(-10, 10))
+
+#Choosing colors: see website https://bookdown.org/hneth/ds4psy/D-2-apx-colors-essentials.html for choosing color palettes
+v1 <- viridis(10)
+v2 <- inferno(15)
+v3 <- magma(20)
+v4 <- plasma(15)
+
+# Specifying the highcharter plot
+hcmap("custom/europe", data = eu_plot_dance, value = "mean_danceability", 
+      nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean Danceability Score", 
+      #dataLabels = list(enabled = TRUE, format = '{point.name}'),
+      borderColor = "#BDBDBD", borderWidth = 0.1,
+      tooltip = list(valueDecimals = 2, valueSuffix = " Danceability")) %>%
+  hc_colorAxis(minColor = v3[3], maxColor = v3[9]) %>%
+  hc_title(text = "Danceability Scores of Top 50 Music Charts Across Europe") %>%
+  hc_legend(title= "Danceability",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
+            layout = "vertical", x = 0, y = -40)
+
+
+#Energy plot
+hcmap("custom/europe", data = eu_plot_energy, value = "mean_energy", 
+      nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean Energy Score", 
+      #dataLabels = list(enabled = TRUE, format = '{point.name}'),
+      borderColor = "#BDBDBD", borderWidth = 0.1,
+      tooltip = list(valueDecimals = 2, valueSuffix = " Energy")) %>%
+  hc_colorAxis(minColor = v2[3], maxColor = v2[9]) %>%
+  hc_title(text = "Energy Scores of Top 50 Music Charts Across Europe") %>%
+  hc_legend(title= "Energy",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
+            layout = "vertical", x = 0, y = -40)
+
+#Passion plot
+hcmap("custom/europe", data = eu_plot_passion, value = "mean_passion", 
+      nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean passion Score", 
+      #dataLabels = list(enabled = TRUE, format = '{point.name}'),
+      borderColor = "#BDBDBD", borderWidth = 0.1,
+      tooltip = list(valueDecimals = 2, valueSuffix = " Passion")) %>%
+  hc_colorAxis(minColor = v4[3], maxColor = v4[8]) %>%
+  hc_title(text = "Passion Scores of Top 50 Music Charts Across Europe") %>%
+  hc_legend(title= "Passion",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
+            layout = "vertical", x = 0, y = -40)
+
+```
+
