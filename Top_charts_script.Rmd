@@ -11,7 +11,7 @@ editor_options:
 ```{r setup, include=FALSE}
 #Clean environment
 rm(list = ls())
-
+#Load packages needed
 pacman::p_load(dplyr,
                tidyverse,
                devtools,
@@ -20,7 +20,7 @@ pacman::p_load(dplyr,
                scales, #scaling variables
                viridis #color palettes
                )
-
+#Installing package directly from git repository
 install_github('charlie86/spotifyr', force = T)
 library(spotifyr)
 
@@ -36,10 +36,13 @@ Sys.setenv(SPOTIFY_CLIENT_ID = id)
 Sys.setenv(SPOTIFY_CLIENT_SECRET = secret)
 
 access_token <- spotifyr::get_spotify_access_token()
-#authorization_code <- get_spotify_authorization_code((scope = "user-top-read"))
+
 ```
 
-## Top charts Europe
+## Top charts Europe data
+1: scrape playlist data from customised Spotify account
+2: extracting track data and audio features from playlist
+3: looping through all playlists to get track and feature info
 ```{r}
 #I will try to apply it to my playlist data
 
@@ -51,13 +54,17 @@ top_50 <- my_plists$name
 top_charts <- my_plists %>%
   filter(name %in% top_50)
 
+
 #Testing elements of the loop
-tracks1 <- get_playlist_tracks(top_charts$id[1])
-tracks1$country <- word(top_charts$name[1], 1)
+tracks1 <- get_playlist_tracks(top_charts$id[38], limit = 50)
+tracks1$country <- word(top_charts$name[38], 1)
 tracks1 <- tracks1 %>% rename(uri = track.uri)
 features1 <- get_track_audio_features(tracks1$track.id)
 merged1 <- merge(tracks1, features1, by = 'uri')
-merged1 <- merged1 %>% select(c("country","track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+merged1 <- merged1 %>% 
+  arrange(desc(track.popularity)) %>% 
+  add_column(chart_number = 1:50) %>% 
+  select(c("country","track.name", "chart_number", "track.popularity", "track.album.artists", "track.album.name", "track.popularity", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
 
 #Defining empty data frame
 cols <- colnames(merged1)
@@ -67,7 +74,7 @@ colnames(allData) <- cols
 #Loop
 for (i in 1:length(top_charts$id)){
   #extracting tracks data from playlist
-  tracks <- get_playlist_tracks(top_charts$id[i])
+  tracks <- get_playlist_tracks(top_charts$id[i], limit = 50)
   #add country column
   tracks$country <- word(top_charts$name[i], 1)
   #rename uri for merge
@@ -76,8 +83,15 @@ for (i in 1:length(top_charts$id)){
   features <- get_track_audio_features(tracks$track.id)
   #merge tracks and features by uri
   merged <- merge(tracks, features, by = 'uri')
-  #select relevant columns
-  merged <- merged %>% select(c("country","track.name", "track.popularity", "track.album.artists", "track.album.name", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+  #wrangle merged dataframe
+  merged <- merged %>% 
+    #arrange in descending order by track popularity
+    arrange(desc(track.popularity)) %>% 
+    #add a column with chart number based on popularity
+    add_column(chart_number = 1:50) %>% 
+    #select only relevant columns 
+    select(c("country","track.name", "chart_number", "track.popularity", "track.album.artists", "track.album.name", "track.popularity", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+  #make sure that the loop doesn't overwrite the values by row binding 
   if (nrow(allData) == 0){
     allData <- merged
   } else{
@@ -85,82 +99,104 @@ for (i in 1:length(top_charts$id)){
   }
 }
 
+```
+
+##Data cleaning
+Preparing data for plotting
+```{r}
 ##Checking for things to clean##
+
 #names of countries
 unique(allData$country)
+#Because we extract the country name based on the first word in the playlist, some are called Topsify, or countries with more than one word in their name are not captured fully. This is fixed underneath:
+allData$country[151:200] <- "Bosnia and Herzegovina"
+allData$country[301:350] <- "Croatia"
+allData$country[401:450] <- "Czech Republic"
+allData$country[1101:1150] <- "Macedonia"
+allData$country[1851:1900] <- "United Kingdom"
 
-allData$country[159:208] <- "Bosnia & Herzegovina"
-allData$country[309:358] <- "Croatia"
-allData$country[409:458] <- "Czech Republic"
-allData$country[1109:1158] <- "Macedonia"
-allData$country[1905:1954] <- "United Kingdom"
+##Preparing data frames for plotting##
 
-```
-
-##Practicing High Charter package
-Scatter plots
-```{r}
-remotes::install_github("allisonhorst/palmerpenguins")
-library(highcharter)
-data(penguins, package = "palmerpenguins")
-hchart(penguins, "scatter", hcaes(x = flipper_length_mm, y = bill_length_mm, group = species))
-
-hchart(allData, "scatter", hcaes(x = energy, y = danceability, group = country))
-
-
-```
-Maps
-```{r}
-pacman::p_load(treemap, scales, viridisLite, viridis, pals)
-
-
-#making a dataframe countrywise
-
-countries <- merge(allData, GNI2014, by = "country")
-
+#Adding weighted counts of danceability and energy by multiplying it by popularity: https://developer.spotify.com/documentation/web-api/reference/tracks/get-track/
+allData <- allData %>% 
+  mutate(danceability_weighted = danceability * track.popularity,
+         energy_weighted = energy * track.popularity)
+  
+#Making country into factor in order to group
 allData$country <- as.factor(allData$country)
+
+#Creating dataframes compatible with high charter maps
+#For danceability
 map_stats_dance <- allData %>% 
   group_by(country) %>% 
-  summarise(mean_danceability = mean(danceability)) 
+  summarise(mean_danceability = mean(danceability_weighted)) 
 
-
+#For energy
 map_stats_energy <- allData %>% 
   group_by(country) %>% 
-  summarise(mean_energy = mean(energy)) 
+  summarise(mean_energy = mean(energy_weighted)) 
 
+#For passionate = danceability + energy
 map_stats_passionate <- allData %>%
   rowwise() %>% 
-  mutate(passion = sum(danceability, energy)) %>% 
+  mutate(passion = sum(danceability_weighted, energy_weighted)) %>% 
   group_by(country) %>% 
   summarise(mean_passion = mean(passion))
 
+#Downloading map stats
 eu_map <- get_data_from_map(download_map_data("custom/europe"))
-# mergin plotdata
-eu_plot_dance <- left_join(map_stats_dance, eu_map[,5:7], by = c("country" = "name"))
-eu_plot_energy <- left_join(map_stats_energy, eu_map[,5:7], by = c("country" = "name"))
-eu_plot_passion <- left_join(map_stats_passionate, eu_map[,5:7], by = c("country" = "name"))
+
+# merging plotdata
+eu_plot_dance <- left_join(map_stats_dance, eu_map[,5:9], by = c("country" = "name"))
+eu_plot_energy <- left_join(map_stats_energy, eu_map[,5:9], by = c("country" = "name"))
+eu_plot_passion <- left_join(map_stats_passionate, eu_map[,5:9], by = c("country" = "name"))
+
 #rescaling the danceability scores
-eu_plot_dance$mean_danceability <- rescale(eu_plot_dance$mean_danceability, to = c(-10, 10))
-eu_plot_energy$mean_energy <- rescale(eu_plot_energy$mean_energy, to = c(-10, 10))
-eu_plot_passion$mean_passion <- rescale(eu_plot_passion$mean_passion, to = c(-10, 10))
+eu_plot_dance$mean_danceability <- rescale(eu_plot_dance$mean_danceability, to = c(0, 100))
+eu_plot_energy$mean_energy <- rescale(eu_plot_energy$mean_energy, to = c(0, 100))
+eu_plot_passion$mean_passion <- rescale(eu_plot_passion$mean_passion, to = c(0, 100))
+```
 
-#Choosing colors: see website https://bookdown.org/hneth/ds4psy/D-2-apx-colors-essentials.html for choosing color palettes
-v1 <- viridis(10)
-v2 <- inferno(15)
+##Choosing colors: 
+see website https://bookdown.org/hneth/ds4psy/D-2-apx-colors-essentials.html for choosing color palettes
+```{r}
+#original viridis
+show_col(viridis_pal()(20))
+#asigning the HEX number
+v1 <- viridis(20)
+#removing FF from HEX numbers to be compatible with Highcharter
+v1 <- str_remove(v1, "FF")
+
+#same steps for the Inferno color palette
+show_col(viridis_pal(option = "inferno")(20))
+v2 <- inferno(20)
+v2 <- str_remove(v2, "FF")
+
+#same steps for the Magma color palette
+show_col(viridis_pal(option = "magma")(20))
 v3 <- magma(20)
-v4 <- plasma(15)
+v3 <- str_remove(v3, "FF")
 
-# Specifying the highcharter plot
+#same steps for the Plasma color palette
+show_col(viridis_pal(option = "plasma")(20))
+v4 <- plasma(20)
+v4 <- str_remove(v4, "FF")
+
+```
+
+##Map plots
+Specifying the highcharter plots inspired by: https://github.com/paulelvers/sentiment_analysis/blob/master/sentiment_music_project.R 
+```{r}
+# Danceability plot
 hcmap("custom/europe", data = eu_plot_dance, value = "mean_danceability", 
       nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean Danceability Score", 
-      #dataLabels = list(enabled = TRUE, format = '{point.name}'),
       borderColor = "#BDBDBD", borderWidth = 0.1,
-      tooltip = list(valueDecimals = 2, valueSuffix = " Danceability")) %>%
-  hc_colorAxis(minColor = v3[3], maxColor = v3[9]) %>%
+      tooltip = list(valueDecimals = 0, valueSuffix = " Danceability")) %>%
+  hc_colorAxis(minColor = v2[3], maxColor = v2[15]) %>%
   hc_title(text = "Danceability Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
   hc_legend(title= "Danceability",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
             layout = "vertical", x = 0, y = -40)
-
 
 #Energy plot
 hcmap("custom/europe", data = eu_plot_energy, value = "mean_energy", 
@@ -168,21 +204,85 @@ hcmap("custom/europe", data = eu_plot_energy, value = "mean_energy",
       #dataLabels = list(enabled = TRUE, format = '{point.name}'),
       borderColor = "#BDBDBD", borderWidth = 0.1,
       tooltip = list(valueDecimals = 2, valueSuffix = " Energy")) %>%
-  hc_colorAxis(minColor = v2[3], maxColor = v2[9]) %>%
+  hc_colorAxis(minColor = v3[2], maxColor = v3[14]) %>%
   hc_title(text = "Energy Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
   hc_legend(title= "Energy",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
             layout = "vertical", x = 0, y = -40)
 
 #Passion plot
 hcmap("custom/europe", data = eu_plot_passion, value = "mean_passion", 
-      nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean passion Score", 
+      nullColor = "#FFFFFF",joinBy = c("hc-a2", "hc-a2"), name = "Mean Passion Score", 
       #dataLabels = list(enabled = TRUE, format = '{point.name}'),
       borderColor = "#BDBDBD", borderWidth = 0.1,
       tooltip = list(valueDecimals = 2, valueSuffix = " Passion")) %>%
-  hc_colorAxis(minColor = v4[3], maxColor = v4[8]) %>%
+  hc_colorAxis(minColor = v1[5], maxColor = v1[17]) %>%
   hc_title(text = "Passion Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
   hc_legend(title= "Passion",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
             layout = "vertical", x = 0, y = -40)
 
+```
+
+##Descritive stats
+Here we want to check statistically whether our hypothesis holds, that is, do countries in Southern Europe listen to more danceable music than countries in Northern Europe
+```{r}
+
+
+##Showing the top 5 most and least danceable countries
+#Descending order
+eu_plot_dance %>% 
+  select(country, mean_danceability, subregion) %>%
+  arrange(desc(mean_danceability)) %>% 
+  head(n=5)
+#Ascending order
+eu_plot_dance %>% 
+  select(country, mean_danceability, subregion) %>%
+  arrange(mean_danceability) %>% 
+  head(n=5)
+
+##Conducting t-test##
+
+#I only want the subregion info from EU map dataframe to be merged with the allData so I subset the two columns
+eu_map2 <- eu_map %>% select(name, subregion)
+
+#I add the subregion data to our data set
+allData <- left_join(allData, eu_map2, by = c("country" = "name"))
+
+#I look at the names of all of the subregions
+allData$subregion <- as.factor(allData$subregion)
+unique(allData$subregion)
+
+# subsetting Northern and Southern Europe
+sub_df <- allData %>% filter(subregion %in% c("Southern Europe", "Northern Europe"))
+
+#I look at the names left after subsetting Northern and Southern Europe
+unique(sub_df$country)
+
+#I see if there are any double tracks
+# Creating index to exclude tracks that are dublicates
+sub_index <- duplicated(sub_df$track.name) | duplicated(sub_df$track.name, fromLast = T)
+
+#I make the t-test on the subsetted data and exclude track that appear more than once
+t.test(danceability_weighted ~ subregion, data=sub_df[!sub_index, ])
+
+# Summary statistics include means and standard deviations and standard errors for the subsetted data to use for visualisation
+sub_stats <- sub_df[!sub_index, ] %>%
+  group_by(subregion) %>%
+  summarise(sd = sd(danceability_weighted), se = sd/sqrt(n()), danceability = mean(danceability_weighted))
+
+# Violin plot with means and SE-errorbars
+ggplot(sub_df[!sub_index, ], aes(y = danceability, x = subregion, fill = subregion)) +
+  geom_violin(alpha = .5) +
+  geom_jitter(size = .5,alpha = .5, width = 0.5, shape = .5, fill = "white") +
+  scale_fill_manual(values=c("#342D7E", "#FDD017")) +
+  theme(axis.text.x = element_text(size = 12), panel.background = element_blank(), legend.position = "none") +
+  geom_errorbar(data = sub_stats, width = 0.03, aes(ymin = danceability - se, ymax = danceability + se), colour = "black") +
+  geom_point(data = sub_stats, aes(y = danceability,x = subregion), shape = 21, size = 3, fill = "black", color = "black") +
+  xlab("") +
+  ylab("Danceability") 
+
+#Exploring some of the track data
+most_pop_song <- allData %>% select(country, track.name, track.popularity, danceability, subregion, chart_number) %>%  filter(track.name == "Mood (feat. iann dior)")
 ```
 
