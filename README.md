@@ -32,4 +32,6 @@ This repo is largly build on the analysis  by Paul Elver (Copyright (c) 2018 pau
 
 "Figures" Folder: This folder contains all the figures created in the analysis
 
+"datapackage_meta_data.json": This .json file contains the meta-data about the variables in the dataframes used for the analysis
+
 "Final_project_writeup.pdf": This pdf file contains the written report of the analysis as handed in by the exam deadline (4th Jan. 2021)
