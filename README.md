@@ -22,3 +22,10 @@ We used the R-package "Highcharter" to create interactive plots for visual asses
 
 # Acknowledgement:
 This repo is largly build on the analysis  by Paul Elver (Copyright (c) 2018 paulelvers): https://github.com/paulelvers/sentiment_analysis/blob/master/sentiment_music_project.R
+
+# How to use:
+"Top_charts_script.Rmd": This markdown file contains the entire code used for the analysis
+"Top_charts_script.html": This html file contains the code and output for the analysis
+"Data" Folder: This folder contains all the written .csv files used for the analysis
+"Figures" Folder: This folder contains all the figures created in the analysis
+"Final_project_writeup.pdf": This pdf file contains the written report of the analysis as handed in by the exam deadline (4th Jan. 2021)
