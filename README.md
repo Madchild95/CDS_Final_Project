@@ -18,7 +18,7 @@ We used Spotify's open source web API to access user data: https://developer.spo
 
 We used the R-package "Spotifyr" to scrape our profiles: https://github.com/charlie86/spotifyr#overview
 
-We used the R-package "Highcharter" to create interactive plots for visual assessment: 
+We used the R-package "Highcharter" to create interactive plots for visual assessment: https://github.com/jbkunst/highcharter
 
 # Acknowledgement:
 This repo is largly build on the analysis  by Paul Elver (Copyright (c) 2018 paulelvers): https://github.com/paulelvers/sentiment_analysis/blob/master/sentiment_music_project.R
