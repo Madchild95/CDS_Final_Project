@@ -1,5 +1,5 @@
 # Cross-european analysis of Spotify song preferences using Spotifyr 
-Final project for Cultural Data Science
+Final project for the course Introduction to Cultural Data Science which is part of the supplementary subject at Aarhus University: https://bachelor.au.dk/en/supplementary-subject/culturaldatascience/
 
 # Project description
 Goal: 
