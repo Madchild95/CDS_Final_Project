@@ -27,6 +27,7 @@ This repo is largly build on the analysis  by Paul Elver (Copyright (c) 2018 pau
 "Top_charts_script.Rmd": This markdown file contains the entire code used for the analysis
 
 "Top_charts_script.html": This html file contains the code and output for the analysis
+  If Github fails to display the rendered .html file, you can put the link of the raw code (https://raw.githubusercontent.com/Madchild95/CDS_Final_Project/main/Top_charts_script.html) into this preview tool: https://htmlpreview.github.io/
 
 "Data" Folder: This folder contains all the written .csv files used for the analysis
 
