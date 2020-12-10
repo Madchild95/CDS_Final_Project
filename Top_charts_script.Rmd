@@ -2,7 +2,7 @@
 title: "Cultural Data Science final project: Cross-european analysis of Spotify song preferences using Spotifyr"
 author: "Matilde Jacobsen & Emilia Djomina Hansen"
 date: "document created: 5 November 2020, last updated: `r format(Sys.time(), '%d %B, %Y')`"
-output: github_document
+output: html_document
 editor_options: 
   chunk_output_type: console
 ---
