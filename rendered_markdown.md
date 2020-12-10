@@ -1,0 +1,448 @@
+---
+title: "Cultural Data Science final project: Cross-european analysis of Spotify song preferences using Spotifyr"
+author: "Matilde Jacobsen & Emilia Djomina Hansen"
+date: "document created: 5 November 2020, last updated: `r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## Install packages
+
+```{r setup}
+#Clean environment
+rm(list = ls())
+#Load packages needed
+pacman::p_load(tidyverse, #package for data-wrangling ++
+               devtools, #package for installing packages directly from github
+               knitr, #package from Spotifyr tutorial
+               highcharter, #package for interactive plotting
+               scales, #package for scaling variables
+               )
+#Installing package directly from git repository
+#install_github('charlie86/spotifyr', force = T)
+library(spotifyr)
+
+```
+
+## Authentication
+First, we set up a Developer account with Spotify to access their Web API here: https://developer.spotify.com/dashboard/ and then we CREATED AN APP from the Dashboard site. This will gave us our Client ID and Client Secret. Once we had those, we could pull our access token into R with get_spotify_access_token().
+```{r}
+#id <- 'xxxxxxxxxxxxxxxxxxxxx' #insert Client ID
+#secret <- 'xxxxxxxxxxxxxxxxxxxxx' #insert Client Secret
+Sys.setenv(SPOTIFY_CLIENT_ID = id)
+Sys.setenv(SPOTIFY_CLIENT_SECRET = secret)
+
+access_token <- spotifyr::get_spotify_access_token()
+
+```
+
+## Top charts Europe data
+We went through following steps to get the "top 50 chart" data from Spotify: 
+
+1: scrape playlist data from customised Spotify account 
+
+2: extracting track data and audio features from playlist 
+
+3: looping through all "top 50 chart" playlists to get track and feature info
+
+```{r, include=FALSE}
+my_id <- 'charlotte.jacobsen'
+```
+
+```{r}
+#We try to gain access to our Spotify profile
+
+#my_id <- 'name_of_spotify_account' # replace id by your respective profile name on Spotify
+```
+
+When importing the playlists from Spotify we put the limit in get_user_playlist to 38, since we used Top 50 Charts (the top 50 most popular songs in a country) of 38 European countries.
+For this code to work, it is important to place the Top 50 playlists on top of your other playlists in your Spotify account. Otherwise you would be including your own playlists within this limit.
+```{r}
+#importing playlists
+top_charts <- get_user_playlists(my_id, limit = 38)
+
+#Test that you get the right playlists
+unique(top_charts$name)
+
+#Look at the owner of the playlists
+unique(top_charts$owner.display_name)
+#We see that there are 8 different owners of the playlists so we explore which playlist have which owners
+owner <- top_charts %>% select(name, owner.display_name)
+#And here we display a count of how many playlists each owner has
+owner %>% group_by(owner.display_name) %>% count(owner.display_name)
+#it looks like the vast majority is owned by "spotifycharts" so we are comfortable with moving on with the analysis
+```
+
+We wanted to get all track information and features from all of the playlists imported, so we created a loop that does this for us
+First, we tested the elements of the loop on one playlist
+```{r}
+#We get track information from the playlist with the function "get_playlist_tracks" and put the limit to 50 as some of the playlists contain more than 50 songs
+tracks1 <- get_playlist_tracks(top_charts$id[1], limit = 50)
+
+#We create a column called country where the first name in the playlist name is extracted - in this case "Austria Top 50" becomes "Austria" in the country column
+tracks1$country <- word(top_charts$name[1], 1) 
+
+#We rename the "uri", so that it is ready to merge with the features dataframe later
+tracks1 <- tracks1 %>% rename(uri = track.uri)
+
+#We get feature information from the tracks in the playlist with the function g"et_track_audio_features"
+features1 <- get_track_audio_features(tracks1$track.id)
+
+#We merge tracks and features into one dataframe by the keyword "uri" to match the right tracks
+merged1 <- merge(tracks1, features1, by = 'uri')
+
+#We use the order arrangement of the playlist based on popularity (most daily plays) and add a column with the chart number with 50 being the most played song and 1 being the least played song, in order to weigh the values later
+merged1 <- merged1 %>% 
+  add_column(chart_number = 50:1) %>%
+  #Here we get the artist name column
+  mutate(artist.name = map_chr(track.artists, function(x) x$name[1])) %>% 
+  #Here we select the columns we actually want to use for the analysis
+  select(c("country","track.name","chart_number", "track.popularity", "artist.name", "track.album.name", "track.popularity", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+```
+
+Then, we defined an empty data frame for the loop
+```{r}
+#We get the names of the columns for the empty dataframe from the test dataframe from above
+cols <- colnames(merged1)
+
+#We make an empty dataframe with the length of column names from the merged dataset and 0 rows to be filled out in the loop
+allData <- data.frame(matrix(ncol = length(cols), nrow = 0))
+
+#We assign the names of the columns from the merged dataset to the empty dataframe
+colnames(allData) <- cols
+```
+
+Then, we created the loop that went through all of the playlists, extract track and audio information and combines it into one big dataframe
+```{r}
+#We make it loop through all 38 playlists in the top_charts dataframe and extract track and audio feature information for each playlist id
+for (i in 1:length(top_charts$id)){
+  #extracting tracks data from playlist
+  tracks <- get_playlist_tracks(top_charts$id[i], limit = 50)
+  #adding country column
+  tracks$country <- word(top_charts$name[i], 1)
+  #renaming uri for merge
+  tracks <- tracks %>% rename(uri = track.uri)
+  #extracting features
+  features <- get_track_audio_features(tracks$track.id)
+  #merging tracks and features by uri
+  merged <- merge(tracks, features, by = 'uri')
+  #wrangling merged dataframe
+  merged <- merged %>% 
+    #adding a column with chart number based on popularity
+    add_column(chart_number = 50:1) %>%
+    #adding artist column
+    mutate(artist.name = map_chr(track.artists, function(x) x$name[1])) %>% 
+    #selecting only relevant columns 
+    select(c("country","track.name", "chart_number", "track.popularity", "artist.name", "track.album.name", "track.popularity", "danceability", "energy", "key", "loudness", "mode", "speechiness","acousticness", "instrumentalness", "liveness", "valence", "tempo", "type"))
+  #making sure that the loop doesn't overwrite the values by row binding (function "rbind") each new dataset unto the prevevious
+  if (nrow(allData) == 0){
+    allData <- merged
+  } else{
+    allData <- rbind(allData, merged)
+  }
+}
+
+#write the scraped data into a .csv file
+write.csv(allData, "raw_data_scraped.csv")
+```
+
+## Data cleaning
+
+We want to check if everything looks as wanted, before starting the analysis:
+```{r}
+#Loading the raw data
+data <- read.csv("raw_data_scraped.csv")
+
+##We check for things to clean##
+#We look at a dataset from one country only
+dk <- data %>% 
+  filter(country == "Denmark")
+#it seems to have all the information wanted
+
+#We check the names of each country
+unique(data$country)
+```
+
+Because we extract the country name based on the first word in the playlist, some are called Topsify, or countries with more than one word in their name are not captured fully. Because some of the misspelled names were the same (the ones called Topsify) we needed to assess the rows manually and guess the right name by looking at the order of the playlists in Spotify:
+```{r}
+#Making country into character in order to assign new names
+data$country <- as.character(data$country)
+
+#Assigning new names to wrong country lables
+data$country[151:200] <- "Bosnia and Herzegovina"
+data$country[301:350] <- "Croatia"
+data$country[401:450] <- "Czech Republic"
+data$country[1101:1150] <- "Macedonia"
+data$country[1851:1900] <- "United Kingdom"
+
+#We check the names again
+unique(data$country)
+```
+
+We downloaded the EU map stats from through Highcharts (see map collection here: https://code.highcharts.com/mapdata/) with the function "get_data_from_map" from the Highcharter package. We did this to check if the names are written in the same way for later merge:
+```{r}
+#downloading map data
+eu_map <- get_data_from_map(download_map_data("custom/europe"))
+#making contry names into a factor variable
+eu_map$name <- as.factor(eu_map$name) 
+#look at country names sorted alphabetically
+sort(eu_map$name)
+
+```
+In this dataset there are 50 different European countries included, but as we only look at the 38 available top chart playlists on Spotify, we only match the names of countries included in our analysis
+
+## Preparing data frames for plotting
+
+Now we want to make a plot of the European map with the scores form the audio features from each country displayed on the map.
+For preparing the dataframe we generally followed the steps from Paul Elvers github repository, and applied our own measures (Copyright (c) 2018 paulelvers): https://github.com/paulelvers/sentiment_analysis/blob/master/sentiment_music_project.R 
+
+
+First, we added weighted scores of danceability and energy by multiplying the scores of each track with the its position on the chart with the assumption that number 1 on the list is the most popular in the country (see more specifications in the report). 
+Then, we created the variable Temper by summing the scores of the weighted danceability and weighted energy:
+```{r}
+# overwriting the full dataset and adding new columns
+data <- data %>% 
+  #creating weighted scores based on track position on the chart
+  mutate(danceability_weighted = danceability * chart_number,
+         energy_weighted = energy * chart_number) %>% 
+  #making it go through the dataset row by row
+  rowwise() %>% 
+  #creating the temper score based on the sum of the weighted energy and danceability scores
+  mutate(temper = sum(danceability_weighted, energy_weighted))
+
+#exporting the dataset as .csv file
+write.csv(data, "top_chart_data.csv")
+```
+
+Now, we created dataframes with a mean score for each country to make it compatible with the high charter maps
+```{r}
+#making country into a factor variable in order to group
+data$country <- as.factor(data$country)
+
+#For danceability
+map_stats_dance <- data %>% 
+  #getting one count for each country
+  group_by(country) %>% 
+  #getting mean danceability score per country
+  summarise(mean_danceability = mean(danceability_weighted)) 
+
+#For energy
+map_stats_energy <- data %>% 
+  #getting one count for each country
+  group_by(country) %>% 
+  #getting mean energy score per country
+  summarise(mean_energy = mean(energy_weighted)) 
+
+#For temper = danceability + energy
+map_stats_temper <- data %>%
+  #getting one count for each country
+  group_by(country) %>% 
+  #getting mean temper score per country
+  summarise(mean_temper = mean(temper))
+```
+
+We want to get the columns 'hc-a2', 'name', 'labelrank', 'country-abbrev', and 'subregion' into our dataframe from the EU map data in order for the highcharter map to work (the important column being 'hc-a2'):
+```{r}
+# merging plotdata with eu-plot data for each plot we want to make
+eu_plot_dance <- left_join(map_stats_dance, eu_map[,5:9], by = c("country" = "name"))
+eu_plot_energy <- left_join(map_stats_energy, eu_map[,5:9], by = c("country" = "name"))
+eu_plot_temper <- left_join(map_stats_temper, eu_map[,5:9], by = c("country" = "name"))
+
+#rescaling the scores from 0-100 for each plot we want to make, so that the gradient looks smoother in the plot
+eu_plot_dance$mean_danceability <- rescale(eu_plot_dance$mean_danceability, to = c(0, 100))
+eu_plot_energy$mean_energy <- rescale(eu_plot_energy$mean_energy, to = c(0, 100))
+eu_plot_temper$mean_temper <- rescale(eu_plot_temper$mean_temper, to = c(0, 100))
+
+#writing ready plot dataframes to a .csv file for later use
+write.csv(eu_plot_dance, "eu_plot_danceability.csv")
+write.csv(eu_plot_energy, "eu_plot_energy.csv")
+write.csv(eu_plot_temper, "eu_plot_temper.csv")
+```
+
+
+## Map plots
+For specifying the highcharter plots we were also inspired by Paul Elvers github repository, and applied our own measures (Copyright (c) 2018 paulelvers): https://github.com/paulelvers/sentiment_analysis/blob/master/sentiment_music_project.R 
+```{r}
+# Danceability plot
+hcmap("custom/europe", data = eu_plot_dance, value = "mean_danceability", 
+      
+      #countries without data are colored light grey with the hex code #D3D3D3
+      #hc-key to join our data with the map is the hc-a2 key which is a 2 letter abbreviation for a       country (usually the same as postal code, e.g. DK for Denmark)
+      nullColor = "#D3D3D3",joinBy = c("hc-a2", "hc-a2"), name = "Mean Danceability Score", 
+      
+      #border color is also coded light grey #D3D3D3 and has the witdh 0.1
+      borderColor = "#D3D3D3", borderWidth = 0.1,
+      
+      #we specify 0 decimals for the mean danceability value and add the suffix Danceability
+      tooltip = list(valueDecimals = 0, valueSuffix = " Danceability")) %>%
+  
+  #here is the scale of the color in the map
+  hc_colorAxis(minColor = "green", maxColor = "yellow") %>%
+  
+  #labels
+  hc_title(text = "Danceability Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
+  hc_legend(title= "Danceability",align = "left", verticalAlign = "middle", reversed = T, margin = 30, layout = "vertical", x = 0, y = -40) %>% 
+  hc_caption(text = "Data source: Spotify top 50 charts")
+
+#Energy plot
+hcmap("custom/europe", data = eu_plot_energy, value = "mean_energy", 
+      nullColor = "#BDBDBD",joinBy = c("hc-a2", "hc-a2"), name = "Mean Energy Score", 
+      borderColor = "#BDBDBD", borderWidth = 0.1,
+      tooltip = list(valueDecimals = 2, valueSuffix = " Energy")) %>%
+  hc_colorAxis(minColor = "purple", maxColor = "pink") %>%
+  hc_title(text = "Energy Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
+  hc_legend(title= "Energy",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
+            layout = "vertical", x = 0, y = -40) %>% 
+  hc_caption(text = "Data source: Spotify top 50 charts")
+
+#Temper plot
+hcmap("custom/europe", data = eu_plot_temper, value = "mean_temper", 
+      nullColor = "#BDBDBD",joinBy = c("hc-a2", "hc-a2"), name = "Mean Temper Score", 
+      borderColor = "#BDBDBD", borderWidth = 0.1,
+      tooltip = list(valueDecimals = 2, valueSuffix = " Temper")) %>%
+  hc_colorAxis(minColor = "blue", maxColor = "red") %>%
+  hc_title(text = "Temper Scores of Top 50 Music Charts Across Europe") %>%
+  hc_subtitle(text = "Scraped with Spotify API November 2020") %>% 
+  hc_legend(title= "Temper",align = "left", verticalAlign = "middle", reversed = T, margin = 30,
+            layout = "vertical", x = 0, y = -40) %>% 
+  hc_caption(text = "Data source: Spotify top 50 charts")
+
+```
+
+## Descritive stats
+Here we want to check statistically whether our hypothesis holds, that is, do countries in Southern Europe listen to music with more temper than countries in Northern Europe
+
+We wanted to assess our hypothesis statistically so we conducted a simple t-test showing the difference between the two subregions
+```{r}
+#We want the subregion info from EU map dataframe to be merged with the data so we subset the two columns from the eu-plot data name of country and subregion
+eu_map2 <- eu_map %>% select(name, subregion)
+
+#We add the subregion data to our large data set
+data <- left_join(data, eu_map2, by = c("country" = "name"))
+
+#We look at the names of all of the subregions
+data$subregion <- as.factor(data$subregion)
+unique(data$subregion)
+
+#We subset the data only by the subregions Northern Europe and Southern Europe
+sub_df <- data %>% filter(subregion %in% c("Southern Europe", "Northern Europe"))
+
+#We look at the countries left and what region they belong to after subsetting Northern and Southern Europe 
+sub_count <- sub_df %>% 
+  #grouping the dataset
+  group_by(country, subregion) %>% 
+  #summarise of the mean temper score per country
+  summarise(mean_temper = mean(temper)) %>% 
+  #arranging the table by subregion
+  arrange(subregion) %>% 
+  #selecting the culumns we want to see
+  select(country, subregion, mean_temper)
+sub_count
+
+#getting a count of how many countries belong to which subregion
+sub_count %>% group_by(subregion) %>% count(subregion) 
+```
+
+We look at summary statistics including means, standard deviations and standard errors for the subsetted data to get an overview
+```{r}
+#from the subregion dataset
+sub_df %>%
+  #grouping into subregions
+  group_by(subregion) %>%
+  #specifying summary statistics
+  summarise(sd = sd(temper), se = sd/sqrt(n()), temper = mean(temper))
+```
+Results:
+
+Northern Europe mean score: 29.4 (sd = 17.4) 
+
+Southern Europe mean score: 33.7 (sd = 20)
+
+We conduct the t-test based on subregion
+```{r}
+#t-test
+t.test(temper ~ subregion, data=sub_df)
+```
+Results:
+
+From the Welch Two Sample t-test it seems like Southern Europe statistically has a higher mean temper score than Northern Europe (p < 0.001), which means that our hypothesis is in principle confirmed, but the difference doesn't seem to be that big (dif mean score: 4.3)
+
+## Stacked bar plot
+We wanted to compare the subregions visually and made a barplot showing the temper score for each country in the two subregions and how the distribution of danceability and energy was for each
+```{r}
+#We prepare a dataframe for plotting the barplot
+sub_bar_plot <- sub_df %>% 
+  #for each country in each subregion
+  group_by(country,subregion) %>%
+  #making a mean score of temper, weighted energy and weighted danceability
+  summarise(mean_temper = mean(temper),
+            mean_danceability = mean(danceability_weighted),
+            mean_energy = mean(energy_weighted)) %>% 
+  #arrange the dataframe by subregion for inspection
+  arrange(subregion)
+range(sub_bar_plot$mean_temper)
+```
+
+We found inspiration for the plot on different websites, but mainly through this post on Stack overflow: https://stackoverflow.com/questions/54651243/r-highcharts-multiple-stacked-bar-chart/54657354
+```{r}
+#creating the bar plot
+hchart(sub_bar_plot, "column", hcaes(x = country, y = mean_temper, group = subregion)) %>% 
+  #defining what type of plot we want
+  hc_chart(type = "column") %>% 
+  
+  #adding labels
+  hc_title(text = "Stacked bar chart") %>% 
+  hc_subtitle(text = "Energy and danceability for North and South") %>% 
+  hc_caption(text = "Data source: Spotify top 50 charts") %>% 
+  hc_yAxis(title = list(text = "Weights")) %>% 
+  hc_xAxis(title = list(text = "Countries in Europe divided into North and South")) %>% 
+  
+  #to get stacked bars of energy and danceability, we used "hc_add_series" and the plot option of     stacking. 
+  hc_add_series(name = "Danceability",
+                data=sub_bar_plot$mean_danceability,
+                stack="Stacked") %>% 
+  hc_add_series(name = "Energy",
+                data=sub_bar_plot$mean_energy,
+                stack="Stacked") %>%  
+  hc_plotOptions(series = list(stacking = "normal"))
+
+```
+
+## Qualitative assessment
+We wanted to see which songs actually scored highest and lowest in temper, and listen to them to see if they matched with our qualitative idea of music with low and high temper
+```{r}
+#making a dataframe of the songs from most to least tempered songs
+top_tracks <- data %>%
+  #selecting the variables we want to look at: country, track name and temper score
+  select(country, track.name, artist.name, temper, subregion) %>%
+  #arranging in decending order
+  arrange(desc(temper))
+
+#showing top 10 songs
+head(unique(top_tracks), n=10)
+
+#making a dataframe of the songs from least to most tempered songs
+bottom_tracks <- data %>%
+  #selecting the variables we want to look at: country, track name and temper score
+  select(country, track.name, artist.name, temper, subregion) %>%
+  #arranging in ascending order (default)
+  arrange(temper)
+
+#showing bottom 10 songs
+head(unique(bottom_tracks), n=10)
+```
+Generally we thought they matched pretty well, and thus think that this analysis is an ok assessment of temper in music.
+
+## Credits:
+```{r}
+#Citations
+#RStudio.Version()
+citation()
+citation("spotifyr")
+citation("highcharter")
+```
+
+
+
